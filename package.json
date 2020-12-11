@@ -1,0 +1,17 @@
+{
+  "name": "hadera",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "Paul Sembereka",
+  "license": "MIT",
+  "private": false,
+  "dependencies": {
+    "@hashgraph/sdk": "^2.0.8",
+    "@hyperledger/burrow": "^0.30.5",
+    "@monax/burrow": "^0.0.3",
+    "dotenv": "^8.2.0"
+  },
+  "scripts": {
+    "start": "node index"
+  }
+}
