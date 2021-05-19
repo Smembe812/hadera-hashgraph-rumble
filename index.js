@@ -16,14 +16,62 @@ const {
     TokenDeleteTransaction,
     TokenWipeTransaction,
     FileContentsQuery,
+    FileCreateTransaction,
     FileId,
     TopicCreateTransaction,
     TopicMessageQuery,
-    TopicMessageSubmitTransaction
+    TopicMessageSubmitTransaction,
+    ContractCreateTransaction,
+    ContractFunctionParameters,
+    ContractCallQuery,
+    ContractExecuteTransaction
 } = require("@hashgraph/sdk");
+const Web3 = require("web3")
+const BigNumber = require('bignumber.js');
+
+// console.log(Web3.utils)
+
+const solidityTypes = {
+    STRING: "String",
+    STRING_ARRAY: "StringArray", 
+    BYTES: "Bytes",
+    BYTES32:"Bytes32",
+    BYTES_ARRAY: "BytesArray",
+    BYTES32_ARRAY: "Bytes32Array",
+    BOOL:"Bool",
+    INT8: "Int8",
+    INT32:"Int32",
+    INT64: "Int64",
+    INT256:"Int256",
+    INT8_ARRAY:"Int8Array",
+    INT32_ARRAY: "Int32Array",
+    INT64_ARRAY:"Int64Array",
+    INT256_ARRAY:"Int256Array",
+    UINT8: "Uint8",
+    UINT32:"Uint32",
+    UINT64:"Uint64",
+    UINT256:"Uint256",
+    UINT8_ARRAY:"Uint8Array",
+    UINT32_ARRAY:"Uint32Array",
+    UINT64_ARRAY:"Uint64Array",
+    UINT256_ARRAY:"Uint256Array",
+    ADDRESS:"Address",
+    ADDRESS_ARRAY: "AddressArray"
+}
 
 require("dotenv").config();
 
+const storageJSON = {
+	"generatedSources": [],
+	"linkReferences": {},
+	"object": "608060405234801561001057600080fd5b5060ac8061001f6000396000f3fe6080604052348015600f57600080fd5b506004361060325760003560e01c80632e64cec11460375780636057361d14604f575b600080fd5b603d606b565b60408051918252519081900360200190f35b606960048036036020811015606357600080fd5b50356071565b005b60005490565b60005556fea264697066735822122061f7ec339554b6b242211198b11f2698c04d3d1f5bb9b777d7f5edb8e90b985164736f6c63430007050033",
+	"opcodes": "PUSH1 0x80 PUSH1 0x40 MSTORE CALLVALUE DUP1 ISZERO PUSH2 0x10 JUMPI PUSH1 0x0 DUP1 REVERT JUMPDEST POP PUSH1 0xAC DUP1 PUSH2 0x1F PUSH1 0x0 CODECOPY PUSH1 0x0 RETURN INVALID PUSH1 0x80 PUSH1 0x40 MSTORE CALLVALUE DUP1 ISZERO PUSH1 0xF JUMPI PUSH1 0x0 DUP1 REVERT JUMPDEST POP PUSH1 0x4 CALLDATASIZE LT PUSH1 0x32 JUMPI PUSH1 0x0 CALLDATALOAD PUSH1 0xE0 SHR DUP1 PUSH4 0x2E64CEC1 EQ PUSH1 0x37 JUMPI DUP1 PUSH4 0x6057361D EQ PUSH1 0x4F JUMPI JUMPDEST PUSH1 0x0 DUP1 REVERT JUMPDEST PUSH1 0x3D PUSH1 0x6B JUMP JUMPDEST PUSH1 0x40 DUP1 MLOAD SWAP2 DUP3 MSTORE MLOAD SWAP1 DUP2 SWAP1 SUB PUSH1 0x20 ADD SWAP1 RETURN JUMPDEST PUSH1 0x69 PUSH1 0x4 DUP1 CALLDATASIZE SUB PUSH1 0x20 DUP2 LT ISZERO PUSH1 0x63 JUMPI PUSH1 0x0 DUP1 REVERT JUMPDEST POP CALLDATALOAD PUSH1 0x71 JUMP JUMPDEST STOP JUMPDEST PUSH1 0x0 SLOAD SWAP1 JUMP JUMPDEST PUSH1 0x0 SSTORE JUMP INVALID LOG2 PUSH5 0x6970667358 0x22 SLT KECCAK256 PUSH2 0xF7EC CALLER SWAP6 SLOAD 0xB6 0xB2 TIMESTAMP 0x21 GT SWAP9 0xB1 0x1F 0x26 SWAP9 0xC0 0x4D RETURNDATASIZE 0x1F JUMPDEST 0xB9 0xB7 PUSH24 0xD7F5EDB8E90B985164736F6C634300070500330000000000 ",
+	"sourceMap": "134:439:0:-:0;;;;;;;;;;;;;;;;;;;"
+}
+const storageObject = storageJSON.object
+
+//TODO: anyone can be client for a given transaction
+// allow key pair arguments for client initiation
 async function makeConnection() {
     //Grab your Hedera testnet account ID and private key from your .env file
     const operatorAccount = process.env.HADERA_ACCOUNT_ID;
@@ -43,16 +91,15 @@ function Account({publicKey, privateKey, accountID, tokenManager }){
     this.accountID = accountID
     this.tokens;
     this.associatedToken;
-
     const _privateKey = privateKey;
     const _tokenManager = tokenManager
+
     this.sendTokens = sendTokens.bind(this)
     this.associateToken = associateToken.bind(this)
     this.grantKYC = grantKYC.bind(this)
     this.linkToken = linkToken.bind(this)
     this.wipe = wipe.bind(this)
     this.balance = balance.bind(this)
-    
     async function associateToken({nodeID, tokenID}){
         this.associatedToken = await _tokenManager.associateAccount({
             nodeID,
@@ -109,11 +156,9 @@ function Account({publicKey, privateKey, accountID, tokenManager }){
 
 async function AccountManager({client}){
     const tokenManager = await TokenManager({client})
-    const topicManager = await TopicManager({client})
-    // const operator = 
+    const topicManager = await TopicManager({client}) //TODO: use topic manager for pub/sub to events
     async function generateKeys(){
         const newAccountPrivateKey = PrivateKey.generate(); 
-        // console.log(newAccountPrivateKey)
         const newAccountPublicKey = newAccountPrivateKey.publicKey;
         return Promise.resolve({
             publicKey: newAccountPublicKey,
@@ -163,7 +208,6 @@ async function AccountManager({client}){
             creationTransaction
         })
     }
-
     async function deleteAccount(account, sendTo=null){
         //Create the transaction to delete an account
         sendTo = !sendTo ? client.operatorAccountId : sendTo
@@ -174,7 +218,6 @@ async function AccountManager({client}){
                 .setTransferAccountId(client.operatorAccountId)
                 .freezeWith(client)
                 .sign(privateKey)
-        
         try {
             const receipt = await transaction.execute(client);
             console.log("account deleted in this transaction is " + accountID)
@@ -206,7 +249,6 @@ async function AccountManager({client}){
         getAccountInfo
     }
 }
-
 async function TokenManager({client}){
     const nodeIDs = client._network.nodes.map(({accountId}) => accountId)
     async function balance({
@@ -369,7 +411,6 @@ async function TopicManager({client}){
         }
     }
     async function sendMessage({message, topicID, submitKey}){
-
         const query = await new TopicMessageSubmitTransaction({
                 topicId: topicID,
                 message,
@@ -401,18 +442,118 @@ async function TopicManager({client}){
         subscribe
     }
 }
+async function SmartContractManager({client}){
+    async function createSmartContract({bytecodeFileId, adminKey}){
+        //Create the transaction
+        const transaction = new ContractCreateTransaction()
+        .setGas(500)
+        .setBytecodeFileId(bytecodeFileId)
+        // .setAdminKey(adminKey);
+        //Modify the default max transaction fee (1 hbar)
+        const modifyTransactionFee = transaction.setMaxTransactionFee(new Hbar(16));
+        //Sign the transaction with the client operator key and submit to a Hedera network
+        const txResponse = await modifyTransactionFee.execute(client);
+        //Get the receipt of the transaction
+        const receipt = await txResponse.getReceipt(client);
+        //Get the new contract ID
+        const newContractId = receipt.contractId;
+        console.log("The new contract ID is " +newContractId);
+        return Promise.resolve(receipt)
+    }
+    async function query({contractId, func, params}){
+        //Contract call query
+        const query = new ContractCallQuery()
+            .setContractId(contractId)
+            .setGas(600)
+        // .setMaxQueryPayment(new Hbar(100))
+        if(!params){
+            query.setFunction(func)
+        }else{
+            params = !params ? null : await new ContractFunctionParameters()
+                .addUint256(new BigNumber(12))
+            // console.log(params)
+            query.setFunction(func, params);
+        }
+        const contractFunctionResult = await query.execute(client);
+        // console.log(contractFunctionResult)
+        // console.log((await contractFunctionResult.getRecord(client)).contractFunctionResult.gasUsed.toString())
+        console.log(Buffer.from(contractFunctionResult.bytes, "utf8").toString());
+        return contractFunctionResult
+    }
+
+    //execute({contractID, func, params:[{value, type}]})
+    async function execute({contractID, func, params=null, gas}){
+        const _transaction = new ContractExecuteTransaction()
+            .setContractId(contractID)
+            .setGas(gas)
+        if (!params || params.length < 1){
+            _transaction.setFunction(func)
+        }
+        else{
+            const _params = await _addParams(params)
+            _transaction.setFunction(func, _params)
+        }
+        const contractFunctionResult = await _transaction.execute(client);
+        console.log((await contractFunctionResult.getRecord(client)).contractFunctionResult.gasUsed.toString())
+        // console.log(Buffer.from(contractFunctionResult.bytes, "utf8").toString());
+        return contractFunctionResult
+    }
+
+    async function _addParams(_params){
+        const params = new ContractFunctionParameters()
+        for (_param of _params){
+            switch(_param.type){
+                case solidityTypes.STRING: params.addString(_param.value); break;
+                case solidityTypes.STRING_ARRAY: params.addStringArray(_param.value); break;
+                case solidityTypes.BYTES: params.addBytes(_param.value); break;
+                case solidityTypes.BYTES32: params.addBytes32(_param.value); break;
+                case solidityTypes.BYTES_ARRAY: params.addBytesArray(_param.value); break;
+                case solidityTypes.BYTES32_ARRAY: params.addBytes32Array(_param.value); break;
+                case solidityTypes.BOOL: params.addBool(_param.value); break;
+                case solidityTypes.INT8: params.addInt8(_param.value); break;
+                case solidityTypes.INT32: params.addInt32(_param.value); break;
+                case solidityTypes.INT64: params.addInt64(_param.value); break;
+                case solidityTypes.INT256: params.addInt256(_param.value); break;
+                case solidityTypes.INT8_ARRAY: params.addInt8Array(_param.value); break;
+                case solidityTypes.INT32_ARRAY: params.addInt32Array(_param.value); break;
+                case solidityTypes.INT64_ARRAY: params.addInt64Array(_param.value); break;
+                case solidityTypes.INT256_ARRAY: params.addInt256Array(_param.value); break;
+                case solidityTypes.UINT8: params.addUint8(_param.value); break;
+                case solidityTypes.UINT32: params.addUint32(_param.value); break;
+                case solidityTypes.UINT64: params.addUint64(_param.value); break;
+                case solidityTypes.UINT256: params.addUint256(_param.value); break;
+                case solidityTypes.UINT8_ARRAY: params.addUint8Array(_param.value); break;
+                case solidityTypes.UINT32_ARRAY: params.addUint32Array(_param.value); break;
+                case solidityTypes.UINT64_ARRAY: params.addUint64Array(_param.value); break;
+                case solidityTypes.UINT256_ARRAY: params.addUint256Array(_param.value); break;
+                case solidityTypes.ADDRESS: params.addAddress(_param.value); break; 
+                case solidityTypes.ADDRESS_ARRAY: params.addAddressArray(_param.value); break;
+                default: throw new Error("parameter type not provided");
+            }
+        }
+        return params
+    }
+    return {createSmartContract, query, execute}
+}
 async function main(){
     const client = await makeConnection()
-
-    const fileQuery = new FileContentsQuery()
-     .setFileId(FileId.fromString("102"));
-
-    //Sign with the operator private key and submit to a Hedera network
-    const contents = await fileQuery.execute(client);
-
+    const fileKey = await PrivateKey.generate()
+    const fileTransaction = new FileCreateTransaction()
+        .setKeys([fileKey.publicKey]) //A different key than the client operator key
+        .setContents(storageObject)
+        .setMaxTransactionFee(new Hbar(20))
+        .freezeWith(client);
+    //Sign with the file private key
+    const signTx = await fileTransaction.sign(fileKey);
+    //Sign with the client operator private key and submit to a Hedera network
+    const submitTx = await fileTransaction.execute(client);
+    //Request the receipt
+    const receipt = await submitTx.getReceipt(client);
+    //Get the file ID
+    const newFileId = receipt.fileId;
+    console.log("The new file ID is: " + newFileId);
     // console.log(contents.toString())
     // console.clear()
-
     //initiate managers
     console.warn("Client initiates managers")
     console.group()
@@ -421,9 +562,18 @@ async function main(){
         TokenManager({client}),
         TopicManager({client})
     ])
+    const smartContractManager = await SmartContractManager({client})
     console.groupEnd()
     
-    
+    const {contractId} = await smartContractManager.createSmartContract({bytecodeFileId:newFileId})
+    // await smartContractManager.query({contractId,func:"store",params: {name:12}})
+    await smartContractManager.execute({
+        contractID: contractId,
+        func:"store",
+        gas:600,
+        params: [{value:12, type: solidityTypes.UINT256}]
+    })
+    await smartContractManager.query({contractId, func:"retrieve", params: null})
     //get main account balance and info
     console.warn("AccountManager checks treasury account's balance and info")
     console.group()
@@ -450,7 +600,7 @@ async function main(){
     await topicManager.sendMessage({
         topicID: topic.topicId,
         submitKey: topic.submitKey,
-        message:"I will send some tokens"
+        message:JSON.stringify({say:"I will send some tokens"})
     })
     
     // create a token
@@ -578,4 +728,84 @@ async function main(){
     ])
 }
 
-main()
+// main()
+
+function Person(name, age){
+    this.setName = setName.bind(this)
+    this.setAge = setAge.bind(this)
+    this.setName(name)
+    this.setAge(age)
+    function setName(name) {
+        this.name = name
+        return this
+    }
+    function setAge(age) {
+        this.age = age
+        return this
+    }
+}
+
+function Car(name, owner){
+    this.setName = setName.bind(this)
+    this.setOwner = setOwner.bind(this)
+    this.info = info.bind(this)
+    
+    this.setName(name)
+    this.setOwner(owner)
+    
+    function setName(name) {
+        this.name = name
+        return this
+    }
+    function setOwner(owner) {
+        this.owner = owner
+        return this
+    }
+    function info(){
+        const {age, name} = this.owner
+        return {
+            car: this.name,
+            owner: {
+                age, name
+            }
+        }
+    }
+}
+
+const PubSub = {
+    events: {},
+    subscribe: function(evName, fn) {
+        console.log(`PUBSUB: someone just subscribed to know about ${evName}`);
+        //add an event with a name as new or to existing list
+        this.events[evName] = this.events[evName] || [];
+        this.events[evName].push(fn);
+        console.log(this.e)
+    },
+    unsubscribe: function(evName, fn) {
+        console.log(`PUBSUB: someone just UNsubscribed from ${evName}`);
+        //remove an event function by name
+        if (this.events[evName]) {
+            this.events[evName] = this.events[evName].filter(f => f !== fn);
+        }
+    },
+    publish: function(evName, data) {
+        console.log(`PUBSUB: Making an broadcast about ${evName} with ${JSON.stringify(data)}`);
+        //emit|publish|announce the event to anyone who is subscribed
+        if (this.events[evName]) {
+        this.events[evName].forEach(f => {
+            f(data);
+        });
+    }
+  }
+}
+
+PubSub.subscribe("OwnerUpdate", owner => console.log(owner))
+const client = new Person("Paul", 24)
+const car = new Car("Tesk", client)
+
+console.log(client, car)
+
+client.setAge(23)
+PubSub.publish("OwnerUpdate", client)
+
+console.log(car.info())
